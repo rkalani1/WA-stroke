@@ -151,7 +151,27 @@ class NeurologistDataCollector:
                             address_line += f" {practice_address['address_2']}"
 
                         city = practice_address.get('city', '')
-                        zip_code = practice_address.get('postal_code', '')
+                        zip_code = practice_address.get('postal_code', '').strip()
+                        state_code = practice_address.get('state', '').strip().upper()
+
+                        # CRITICAL: Validate Washington State
+                        # WA ZIP codes: 98001-99403
+                        is_valid_wa = False
+
+                        # Check ZIP code starts with 98 or 99
+                        if zip_code and len(zip_code) >= 2:
+                            zip_prefix = zip_code[:2]
+                            if zip_prefix in ['98', '99']:
+                                is_valid_wa = True
+
+                        # Double-check state code
+                        if state_code != 'WA':
+                            is_valid_wa = False
+
+                        # Skip if not actually in Washington State
+                        if not is_valid_wa:
+                            print(f"  Skipping {full_name} - Not in WA (ZIP: {zip_code}, State: {state_code}, City: {city})")
+                            continue
 
                         # Geocode
                         coords = self.geocode_address(address_line, city, 'WA', zip_code)
