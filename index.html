@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Washington State Stroke Neurologists</title>
+    <title>Washington State Vascular Neurologists | ABPN Board-Certified</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <style>
         * {
@@ -110,6 +110,69 @@
         .marker-cluster-small div {
             background-color: rgba(102, 126, 234, 0.8);
         }
+        .provider-list {
+            background: white;
+            border-radius: 12px;
+            padding: 2rem;
+            margin-top: 2rem;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        .provider-list h2 {
+            color: #667eea;
+            margin-bottom: 1.5rem;
+            font-size: 1.5rem;
+        }
+        .city-section {
+            margin-bottom: 2rem;
+        }
+        .city-header {
+            font-size: 1.3rem;
+            color: #333;
+            margin-bottom: 1rem;
+            padding-bottom: 0.5rem;
+            border-bottom: 2px solid #667eea;
+        }
+        .health-system {
+            margin-bottom: 1.5rem;
+        }
+        .health-system-name {
+            font-size: 1.1rem;
+            color: #764ba2;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+        }
+        .provider-item {
+            padding: 0.75rem;
+            margin-bottom: 0.5rem;
+            background: #f8f9fa;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            border-left: 3px solid transparent;
+        }
+        .provider-item:hover {
+            background: #e9ecef;
+            border-left-color: #667eea;
+            transform: translateX(4px);
+        }
+        .provider-name {
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 0.25rem;
+        }
+        .provider-details {
+            font-size: 0.9rem;
+            color: #666;
+        }
+        .no-location {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        .no-location:hover {
+            background: #f8f9fa;
+            transform: none;
+            border-left-color: transparent;
+        }
         @media (max-width: 768px) {
             .header h1 {
                 font-size: 1.5rem;
@@ -117,13 +180,16 @@
             #map {
                 height: 400px;
             }
+            .provider-list {
+                padding: 1rem;
+            }
         }
     </style>
 </head>
 <body>
     <div class="header">
-        <h1>Washington State Stroke Neurologists</h1>
-        <p>Board-certified stroke neurologists currently practicing in Washington State</p>
+        <h1>Washington State Vascular Neurologists</h1>
+        <p>ABPN board-certified vascular neurologists currently practicing in Washington State</p>
         <div class="stats">
             <div class="stat">
                 <div class="stat-value" id="total-count">-</div>
@@ -143,8 +209,13 @@
 
         <div id="map"></div>
 
+        <div class="provider-list">
+            <h2>Vascular Neurologists by Location</h2>
+            <div id="provider-list-content"></div>
+        </div>
+
         <div class="last-updated">
-            Data sourced from CMS NPPES and Washington State Department of Health
+            Data sourced from CMS NPPES (National Provider Identifier Database)
         </div>
     </div>
 
@@ -152,7 +223,9 @@
     <script>
         let map;
         let markers = [];
+        let markersByNPI = {};
         let allNeurologists = [];
+        let filteredNeurologists = [];
 
         // Initialize map centered on Washington State
         function initMap() {
@@ -175,8 +248,10 @@
                 document.getElementById('total-count').textContent = allNeurologists.length;
                 document.getElementById('last-update').textContent = data.last_updated || 'Unknown';
 
-                // Add markers
+                // Add markers and list
+                filteredNeurologists = allNeurologists;
                 displayMarkers(allNeurologists);
+                buildProviderList(allNeurologists);
             } catch (error) {
                 console.error('Error loading data:', error);
                 document.getElementById('total-count').textContent = '0';
@@ -189,6 +264,7 @@
             // Clear existing markers
             markers.forEach(marker => map.removeLayer(marker));
             markers = [];
+            markersByNPI = {};
 
             // Add new markers
             neurologists.forEach(neuro => {
@@ -208,8 +284,92 @@
                             </div>
                         `);
                     markers.push(marker);
+                    markersByNPI[neuro.npi] = marker;
                 }
             });
+        }
+
+        // Build provider list organized by city and health system
+        function buildProviderList(neurologists) {
+            const listContainer = document.getElementById('provider-list-content');
+
+            // Organize by city, then by health system
+            const byCity = {};
+            neurologists.forEach(neuro => {
+                const city = neuro.city || 'Unknown City';
+                if (!byCity[city]) {
+                    byCity[city] = {};
+                }
+
+                const org = neuro.organization || 'Independent Practice';
+                if (!byCity[city][org]) {
+                    byCity[city][org] = [];
+                }
+
+                byCity[city][org].push(neuro);
+            });
+
+            // Sort cities alphabetically
+            const sortedCities = Object.keys(byCity).sort();
+
+            // Build HTML
+            let html = '';
+            sortedCities.forEach(city => {
+                html += `<div class="city-section">`;
+                html += `<div class="city-header">${city}</div>`;
+
+                // Sort health systems alphabetically
+                const sortedOrgs = Object.keys(byCity[city]).sort();
+
+                sortedOrgs.forEach(org => {
+                    const providers = byCity[city][org];
+
+                    html += `<div class="health-system">`;
+                    html += `<div class="health-system-name">${org}</div>`;
+
+                    providers.forEach(provider => {
+                        const hasLocation = provider.latitude && provider.longitude;
+                        const locationClass = hasLocation ? '' : 'no-location';
+
+                        html += `<div class="provider-item ${locationClass}" ${hasLocation ? `onclick="zoomToProvider('${provider.npi}')"` : ''}>`;
+                        html += `<div class="provider-name">${provider.name}</div>`;
+                        html += `<div class="provider-details">`;
+
+                        if (provider.address) {
+                            html += `${provider.address}, `;
+                        }
+                        html += `${city}, WA`;
+                        if (provider.zip) {
+                            html += ` ${provider.zip}`;
+                        }
+                        if (provider.phone) {
+                            html += ` • ${provider.phone}`;
+                        }
+                        if (!hasLocation) {
+                            html += ` <span style="color: #999;">(Location pending)</span>`;
+                        }
+
+                        html += `</div></div>`;
+                    });
+
+                    html += `</div>`;
+                });
+
+                html += `</div>`;
+            });
+
+            listContainer.innerHTML = html;
+        }
+
+        // Zoom to provider on map
+        function zoomToProvider(npi) {
+            const marker = markersByNPI[npi];
+            if (marker) {
+                map.setView(marker.getLatLng(), 13);
+                marker.openPopup();
+                // Smooth scroll to map
+                document.getElementById('map').scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }
         }
 
         // Search functionality
@@ -219,7 +379,10 @@
                 const query = e.target.value.toLowerCase();
 
                 if (query.length === 0) {
+                    filteredNeurologists = allNeurologists;
                     displayMarkers(allNeurologists);
+                    buildProviderList(allNeurologists);
+                    document.getElementById('total-count').textContent = allNeurologists.length;
                     return;
                 }
 
@@ -232,7 +395,9 @@
                     );
                 });
 
+                filteredNeurologists = filtered;
                 displayMarkers(filtered);
+                buildProviderList(filtered);
                 document.getElementById('total-count').textContent = filtered.length;
             });
         }

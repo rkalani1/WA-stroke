@@ -67,118 +67,116 @@ class NeurologistDataCollector:
         print("Fetching data from NPPES...")
         neurologists = []
 
-        # Search parameters for stroke/vascular neurologists in Washington
-        search_terms = [
-            "Vascular Neurology",
-            "Neurology",
-        ]
+        # Search for ABPN board-certified vascular neurologists only
+        # Taxonomy Code 2084N0600X = Vascular Neurology
 
-        for search_term in search_terms:
-            print(f"Searching NPPES for: {search_term}")
+        print("Searching for board-certified vascular neurologists...")
 
-            # NPPES API endpoint
-            url = "https://npiregistry.cms.hhs.gov/api/"
+        # NPPES API endpoint
+        url = "https://npiregistry.cms.hhs.gov/api/"
 
-            params = {
-                'version': '2.1',
-                'state': 'WA',
-                'taxonomy_description': search_term,
-                'limit': 200
-            }
+        # Search by taxonomy code for vascular neurology
+        params = {
+            'version': '2.1',
+            'state': 'WA',
+            'taxonomy_description': 'Vascular Neurology',
+            'limit': 200
+        }
 
-            try:
-                response = requests.get(url, params=params, timeout=30)
-                response.raise_for_status()
-                data = response.json()
+        try:
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
 
-                if 'results' in data and data['results']:
-                    print(f"Found {len(data['results'])} providers for {search_term}")
+            if 'results' in data and data['results']:
+                print(f"Found {len(data['results'])} vascular neurologists")
 
-                    for provider in data['results']:
-                        npi = provider.get('number')
+                for provider in data['results']:
+                    npi = provider.get('number')
 
-                        # Skip duplicates
-                        if npi in self.seen_npis:
-                            continue
-                        self.seen_npis.add(npi)
+                    # Skip duplicates
+                    if npi in self.seen_npis:
+                        continue
+                    self.seen_npis.add(npi)
 
-                        # Extract provider information
-                        basic = provider.get('basic', {})
+                    # Extract provider information
+                    basic = provider.get('basic', {})
 
-                        # Get primary practice address
-                        addresses = provider.get('addresses', [])
-                        practice_address = None
-                        for addr in addresses:
-                            if addr.get('address_purpose') == 'LOCATION':
-                                practice_address = addr
+                    # Get primary practice address
+                    addresses = provider.get('addresses', [])
+                    practice_address = None
+                    for addr in addresses:
+                        if addr.get('address_purpose') == 'LOCATION':
+                            practice_address = addr
+                            break
+
+                    if not practice_address and addresses:
+                        practice_address = addresses[0]
+
+                    # Check if this is a vascular neurologist
+                    taxonomies = provider.get('taxonomies', [])
+                    is_vascular_neuro = False
+                    specialty_desc = "Vascular Neurology"
+
+                    for tax in taxonomies:
+                        if tax and isinstance(tax, dict):
+                            desc = (tax.get('desc') or '').lower()
+                            if 'vascular' in desc or 'stroke' in desc:
+                                is_vascular_neuro = True
+                                specialty_desc = tax.get('desc') or 'Vascular Neurology'
                                 break
 
-                        if not practice_address and addresses:
-                            practice_address = addresses[0]
+                    # Only include if they have vascular neurology certification
+                    if not is_vascular_neuro:
+                        continue
 
-                        # Check if this is a stroke/vascular neurologist
-                        taxonomies = provider.get('taxonomies', [])
-                        is_vascular_neuro = False
-                        specialty_desc = "Neurology"
+                    # Build neurologist record
+                    if practice_address:
+                        name_parts = []
+                        if basic.get('first_name'):
+                            name_parts.append(basic['first_name'])
+                        if basic.get('middle_name'):
+                            name_parts.append(basic['middle_name'])
+                        if basic.get('last_name'):
+                            name_parts.append(basic['last_name'])
 
-                        for tax in taxonomies:
-                            if tax and isinstance(tax, dict):
-                                desc = (tax.get('desc') or '').lower()
-                                if 'vascular' in desc or 'stroke' in desc:
-                                    is_vascular_neuro = True
-                                    specialty_desc = tax.get('desc') or 'Vascular Neurology'
-                                    break
+                        full_name = ' '.join(name_parts)
 
-                        # Build neurologist record
-                        if practice_address:
-                            name_parts = []
-                            if basic.get('first_name'):
-                                name_parts.append(basic['first_name'])
-                            if basic.get('middle_name'):
-                                name_parts.append(basic['middle_name'])
-                            if basic.get('last_name'):
-                                name_parts.append(basic['last_name'])
+                        # Add credentials
+                        if basic.get('credential'):
+                            full_name += f", {basic['credential']}"
 
-                            full_name = ' '.join(name_parts)
+                        address_line = practice_address.get('address_1', '')
+                        if practice_address.get('address_2'):
+                            address_line += f" {practice_address['address_2']}"
 
-                            # Add credentials
-                            if basic.get('credential'):
-                                full_name += f", {basic['credential']}"
+                        city = practice_address.get('city', '')
+                        zip_code = practice_address.get('postal_code', '')
 
-                            address_line = practice_address.get('address_1', '')
-                            if practice_address.get('address_2'):
-                                address_line += f" {practice_address['address_2']}"
+                        # Geocode
+                        coords = self.geocode_address(address_line, city, 'WA', zip_code)
 
-                            city = practice_address.get('city', '')
-                            zip_code = practice_address.get('postal_code', '')
+                        neuro_data = {
+                            'npi': npi,
+                            'name': full_name,
+                            'credentials': basic.get('credential', ''),
+                            'specialty': specialty_desc,
+                            'is_vascular_neurology': is_vascular_neuro,
+                            'organization': basic.get('organization_name', ''),
+                            'address': address_line,
+                            'city': city,
+                            'state': 'WA',
+                            'zip': zip_code,
+                            'phone': practice_address.get('telephone_number', ''),
+                            'latitude': coords[0] if coords else None,
+                            'longitude': coords[1] if coords else None,
+                            'source': 'NPPES'
+                        }
 
-                            # Geocode
-                            coords = self.geocode_address(address_line, city, 'WA', zip_code)
+                        neurologists.append(neuro_data)
 
-                            neuro_data = {
-                                'npi': npi,
-                                'name': full_name,
-                                'credentials': basic.get('credential', ''),
-                                'specialty': specialty_desc,
-                                'is_vascular_neurology': is_vascular_neuro,
-                                'organization': basic.get('organization_name', ''),
-                                'address': address_line,
-                                'city': city,
-                                'state': 'WA',
-                                'zip': zip_code,
-                                'phone': practice_address.get('telephone_number', ''),
-                                'latitude': coords[0] if coords else None,
-                                'longitude': coords[1] if coords else None,
-                                'source': 'NPPES'
-                            }
-
-                            neurologists.append(neuro_data)
-
-                time.sleep(0.5)  # Rate limiting
-
-            except requests.exceptions.RequestException as e:
-                print(f"Error fetching from NPPES: {e}")
-                continue
+        except requests.exceptions.RequestException as e:
+            print(f"Error fetching from NPPES: {e}")
 
         return neurologists
 
