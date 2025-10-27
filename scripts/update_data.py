@@ -122,11 +122,12 @@ class NeurologistDataCollector:
                         specialty_desc = "Neurology"
 
                         for tax in taxonomies:
-                            desc = tax.get('desc', '').lower()
-                            if 'vascular' in desc or 'stroke' in desc:
-                                is_vascular_neuro = True
-                                specialty_desc = tax.get('desc', 'Vascular Neurology')
-                                break
+                            if tax and isinstance(tax, dict):
+                                desc = (tax.get('desc') or '').lower()
+                                if 'vascular' in desc or 'stroke' in desc:
+                                    is_vascular_neuro = True
+                                    specialty_desc = tax.get('desc') or 'Vascular Neurology'
+                                    break
 
                         # Build neurologist record
                         if practice_address:
